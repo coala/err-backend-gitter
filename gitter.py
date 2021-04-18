@@ -153,12 +153,13 @@ class GitterRoom(Room):
     def invite(self, *args) -> None:
         pass
 
-    def __init__(self, backend, idd, uri, name):
+    def __init__(self, backend, idd, uri, name, user_count):
         self._backend = backend
         self._name = name
         self._uri = uri
         self._idd = idd
         self._joined = False
+        self._user_count = user_count
 
     def join(self, username=None, password=None):
         log.debug("Joining room %s (%s)" % (self._uri, self._idd))
@@ -185,6 +186,10 @@ class GitterRoom(Room):
     def joined(self):
         return self._joined
 
+    @property
+    def user_count(self):
+        return self._user_count
+
     exists = True  # TODO
 
     def destroy(self):
@@ -208,9 +213,12 @@ class GitterRoom(Room):
     @property
     def occupants(self):
         occupants = []
-        json_users = self._backend.readAPIRequest('rooms/%s/users' % self._idd)
-        for json_user in json_users:
-            occupants.append(GitterRoomOccupant.build_from_json(self, json_user))
+        # 100 is the maximum number of users Gitter API can return
+        for skip in range(0, self._user_count, 100):
+            json_users = self._backend.readAPIRequest(
+                'rooms/{}/users?skip={}&limit=100'.format(self._idd, skip))
+            for json_user in json_users:
+                occupants.append(GitterRoomOccupant.build_from_json(self, json_user))
         return occupants
 
     def __eq_(self, other):
@@ -369,7 +377,7 @@ class GitterBackend(ErrBot):
             if not json_room['oneToOne']:
                 log.debug("found room %s (%s)" % (json_room['name'], json_room['uri']))
                 rooms.append(GitterRoom(self, json_room['id'], json_room['uri'],
-                                        json_room['name']))
+                                        json_room['name'], json_room['userCount']))
         return rooms
 
     def contacts(self):
@@ -385,7 +393,8 @@ class GitterBackend(ErrBot):
                         backend=self,
                         idd=json_room['id'],
                         uri=json_room['url'],
-                        name=json_room['name']
+                        name=json_room['name'],
+                        user_count=json_room['userCount']
                     )
                 )
         return contacts
@@ -410,7 +419,8 @@ class GitterBackend(ErrBot):
                             backend=self,
                             idd=json_room['id'],
                             uri=json_room['url'],
-                            name=json_room['name']
+                            name=json_room['name'],
+                            user_count=json_room['userCount']
                         ),
                         json_user=json_user
                     )
